@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forge — CNN Training &amp; Robustness Console</title>
+<style>
+  :root{
+    --bg:#182A52;
+    --panel:#1F3260;
+    --panel-2:#2A3F72;
+    --line:#3C5590;
+    --gold:#F0D28A;        /* primary text gold */
+    --gold-bright:#FFE066; /* accent / active glow */
+    --gold-deep:#D9A83B;   /* secondary gold, loss line */
+    --text-dim:#A6B4DE;    /* muted blue-grey for secondary text on navy */
+    --danger:#FF7A70;
+    --attack:#FF7A70;
+    --defense:#5CE8AE;
+    --display-font: 'IBM Plex Mono', 'Courier New', monospace;
+    --body-font: 'IBM Plex Sans', -apple-system, sans-serif;
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+
+  body{
+    background:var(--bg);
+    color:var(--gold);
+    font-family:var(--body-font);
+    font-size:15.5px;
+    min-height:100vh;
+    overflow-x:hidden;
+  }
+
+  body::before{
+    content:"";
+    position:fixed; inset:0;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size:48px 48px;
+    opacity:0.13;
+    pointer-events:none;
+    z-index:0;
+  }
+
+  .app{ position:relative; z-index:1; max-width:1500px; margin:0 auto; padding:30px 32px 60px; }
+
+  header{
+    display:flex; align-items:baseline; justify-content:space-between;
+    padding-bottom:24px; margin-bottom:28px;
+    border-bottom:1px solid var(--line);
+  }
+  .brand{ display:flex; align-items:baseline; gap:16px; }
+  .brand .mark{
+    font-family:var(--display-font);
+    color:var(--gold-bright);
+    font-size:24px;
+    letter-spacing:2px;
+  }
+  h1{
+    font-family:var(--display-font);
+    font-size:44px;
+    font-style:normal;
+    font-weight:600;
+    letter-spacing:-0.5px;
+    color:var(--gold-bright);
+    text-shadow:0 0 22px rgba(255,216,77,0.25);
+  }
+  .tagline{ color:var(--text-dim); font-size:14px; margin-top:6px; }
+  .status-pill{
+    font-family:var(--display-font);
+    font-size:13px;
+    color:var(--gold-bright);
+    border:1px solid var(--gold-bright);
+    padding:6px 14px;
+    border-radius:2px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .status-pill .dot{
+    width:7px; height:7px; border-radius:50%; background:var(--gold-bright);
+    box-shadow:0 0 8px var(--gold-bright);
+    animation:pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.25;} }
+
+  .grid{ display:grid; grid-template-columns:300px 1fr 320px; gap:22px; }
+  @media (max-width:1050px){ .grid{ grid-template-columns:1fr; } }
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:20px;
+  }
+  .col-left{ display:flex; flex-direction:column; gap:18px; max-height:1400px; overflow-y:auto; }
+
+  .panel h2{
+    font-family:var(--display-font);
+    font-size:14px;
+    text-transform:uppercase;
+    letter-spacing:1.5px;
+    color:var(--gold-bright);
+    font-weight:600;
+    margin-bottom:16px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .panel h2 small{ color:var(--text-dim); font-size:10.5px; text-transform:none; letter-spacing:0; }
+
+  .field{ margin-bottom:18px; }
+  .field:last-child{ margin-bottom:0; }
+  .field label{
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-size:14.5px; color:var(--gold); margin-bottom:8px; font-weight:500;
+  }
+  .field label .val{ color:var(--gold-bright); font-family:var(--display-font); font-size:13px; }
+  .field .default-note{ color:var(--text-dim); font-size:11px; margin-top:5px; }
+
+  input[type=range]{
+    width:100%; -webkit-appearance:none; height:3px;
+    background:var(--line); border-radius:2px; outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:15px; height:15px; border-radius:50%;
+    background:var(--gold-bright); cursor:pointer;
+    box-shadow:0 0 10px rgba(255,216,77,0.6);
+  }
+  select, input[type=number]{
+    width:100%; background:var(--panel-2); color:var(--gold);
+    border:1px solid var(--line); border-radius:4px; padding:9px 10px;
+    font-family:var(--body-font); font-size:14px;
+  }
+
+  .checkbox-row{
+    display:flex; align-items:flex-start; gap:10px; margin-bottom:12px; cursor:pointer;
+  }
+  .checkbox-row:last-child{ margin-bottom:0; }
+  .checkbox-row input[type=checkbox]{
+    width:17px; height:17px; margin-top:2px; accent-color:var(--gold-bright); cursor:pointer; flex-shrink:0;
+  }
+  .checkbox-row .cb-text{ display:flex; flex-direction:column; }
+  .checkbox-row .cb-title{ font-size:14px; color:var(--gold); font-weight:500; }
+  .checkbox-row .cb-sub{ font-size:11.5px; color:var(--text-dim); margin-top:2px; }
+
+  .btn-row{ display:flex; gap:10px; margin-top:4px; }
+  button{
+    font-family:var(--display-font);
+    font-size:13.5px;
+    letter-spacing:0.5px;
+    padding:12px 16px;
+    border-radius:4px;
+    border:1px solid var(--line);
+    background:var(--panel-2);
+    color:var(--gold);
+    cursor:pointer;
+    transition:all .15s ease;
+    flex:1;
+  }
+  button.primary{
+    background:var(--gold-bright); color:#1A1400; border-color:var(--gold-bright);
+    font-weight:700;
+  }
+  button.primary:hover{ box-shadow:0 0 18px rgba(255,216,77,0.5); }
+  button.stop{ border-color:var(--danger); color:var(--danger); }
+  button:disabled{ opacity:0.4; cursor:not-allowed; }
+
+  /* ---------- CENTER ---------- */
+  .center-panel{ display:flex; flex-direction:column; gap:18px; }
+  #network-svg{ width:100%; height:260px; display:block; }
+  .layer-label{ font-family:var(--display-font); font-size:10px; fill:var(--text-dim); text-anchor:middle; }
+  .node{ fill:var(--panel-2); stroke:var(--line); stroke-width:1; }
+  .node.active{ fill:var(--gold-bright); }
+  .edge{ stroke:var(--line); stroke-width:1; opacity:0.5; }
+
+  .metrics-row{ display:flex; gap:14px; flex-wrap:wrap; }
+  .metric-card{
+    flex:1; min-width:130px; background:var(--panel-2); border:1px solid var(--line);
+    border-radius:4px; padding:14px 16px;
+  }
+  .metric-card.hidden{ display:none; }
+  .metric-card .label{ font-size:11.5px; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; }
+  .metric-card .value{ font-family:var(--display-font); font-size:28px; margin-top:6px; color:var(--gold-bright); }
+  .metric-card.loss .value{ color:var(--gold-deep); }
+  .metric-card.robust .value{ color:var(--danger); }
+
+  .legend{ display:flex; gap:18px; font-size:12px; color:var(--text-dim); }
+  .legend span{ display:flex; align-items:center; gap:6px; }
+  .swatch{ width:12px; height:3px; display:inline-block; border-radius:2px; }
+
+  canvas#chart{ width:100%; height:180px; display:block; }
+
+  /* ---------- RIGHT ---------- */
+  .kv{ display:flex; justify-content:space-between; font-size:13px; padding:7px 0; border-bottom:1px solid var(--line); color:var(--gold); }
+  .kv span:last-child{ color:var(--text-dim); font-family:var(--display-font); text-align:right; }
+
+  .log-line{
+    font-family:var(--display-font);
+    font-size:12.5px;
+    color:var(--text-dim);
+    padding:4px 0;
+    border-bottom:1px dashed rgba(255,255,255,0.04);
+    white-space:pre-wrap;
+  }
+  .log-line .ep{ color:var(--gold-bright); }
+  #log{ max-height:420px; overflow-y:auto; }
+
+  .section-divider{ border-top:1px solid var(--line); margin:18px 0; }
+
+  /* ---------- Hero focus: Adversarial Robustness Lab ---------- */
+  .hero-focus{ margin-bottom:28px; }
+  .hero-focus-title{ margin-bottom:16px; }
+  .hero-heading{
+    font-family:var(--display-font);
+    font-size:26px;
+    font-weight:700;
+    color:var(--gold-bright);
+    letter-spacing:0.5px;
+    text-shadow:0 0 18px rgba(255,224,102,0.3);
+  }
+  .hero-sub{ color:var(--text-dim); font-size:14px; margin-top:6px; }
+  .hero-grid{ display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+  @media (max-width:1000px){ .hero-grid{ grid-template-columns:1fr; } }
+  .hero-grid .focus-panel{ max-height:640px; overflow-y:auto; }
+
+  /* ---------- Run bar ---------- */
+  .run-bar{
+    display:flex; align-items:center; justify-content:space-between; gap:20px;
+    background:var(--panel); border:1.5px solid var(--gold-bright);
+    border-radius:6px; padding:18px 24px; margin-bottom:28px;
+    box-shadow:0 0 24px rgba(255,224,102,0.12);
+  }
+  .run-bar-info{ display:flex; flex-direction:column; gap:4px; }
+  .run-bar-label{ font-family:var(--display-font); font-size:15px; color:var(--gold-bright); font-weight:700; letter-spacing:0.5px; }
+  .run-bar-hint{ font-size:12.5px; color:var(--text-dim); }
+  .run-bar-buttons{ margin-top:0; flex:0 0 auto; min-width:280px; }
+  .run-bar-buttons button{ padding:14px 22px; font-size:15px; }
+  @media (max-width:700px){ .run-bar{ flex-direction:column; align-items:stretch; } .run-bar-buttons{ min-width:0; } }
+
+  /* ---------- Attack / Defense focus styling ---------- */
+  .focus-panel{ border-width:1.5px; }
+  .focus-panel.attack{ border-color:rgba(240,104,95,0.55); box-shadow:0 0 0 1px rgba(240,104,95,0.08), 0 0 24px rgba(240,104,95,0.08) inset; }
+  .focus-panel.defense{ border-color:rgba(77,220,158,0.55); box-shadow:0 0 0 1px rgba(77,220,158,0.08), 0 0 24px rgba(77,220,158,0.08) inset; }
+  .focus-panel h2{ font-size:16px; letter-spacing:1.8px; }
+  .focus-panel.attack h2{ color:var(--attack); }
+  .focus-panel.defense h2{ color:var(--defense); }
+
+  .meter{ margin-top:14px; }
+  .meter-label{ display:flex; justify-content:space-between; font-size:12px; color:var(--text-dim); margin-bottom:6px; font-family:var(--display-font); }
+  .meter-track{ width:100%; height:8px; background:var(--panel-2); border:1px solid var(--line); border-radius:4px; overflow:hidden; }
+  .meter-fill{ height:100%; width:0%; transition:width .25s ease; }
+  .meter-fill.attack{ background:linear-gradient(90deg, rgba(240,104,95,0.4), var(--attack)); box-shadow:0 0 10px rgba(240,104,95,0.5); }
+  .meter-fill.defense{ background:linear-gradient(90deg, rgba(77,220,158,0.4), var(--defense)); box-shadow:0 0 10px rgba(77,220,158,0.5); }
+  .meter-fill.net{ background:linear-gradient(90deg, var(--defense), var(--attack)); }
+
+  ::-webkit-scrollbar{ width:6px; }
+  ::-webkit-scrollbar-thumb{ background:var(--line); border-radius:3px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="brand">
+      <span class="mark">[ F ]</span>
+      <div>
+        <h1>Forge Training Console</h1>
+        <div class="tagline">Configure a lightweight CNN, its optimizer, pooling, and adversarial robustness — every option is optional.</div>
+      </div>
+    </div>
+    <div class="status-pill"><span class="dot"></span> <span id="status-text">IDLE</span></div>
+  </header>
+
+  <div class="hero-focus">
+    <div class="hero-focus-title">
+      <h2 class="hero-heading">Adversarial Robustness Lab</h2>
+      <div class="hero-sub">The core of this console — craft an attack, then see how far each defense pushes accuracy back.</div>
+    </div>
+    <div class="hero-grid">
+
+      <div class="panel focus-panel attack">
+        <h2>⚠ Adversarial attacks <small>evaluation only, optional</small></h2>
+        <label class="checkbox-row">
+          <input type="checkbox" id="atk-fgsm">
+          <span class="cb-text"><span class="cb-title">FGSM</span><span class="cb-sub">Single-step gradient sign attack.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="atk-ifgsm">
+          <span class="cb-text"><span class="cb-title">I-FGSM</span><span class="cb-sub">Iterative FGSM, several small steps.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="atk-pgd">
+          <span class="cb-text"><span class="cb-title">PGD</span><span class="cb-sub">Projected Gradient Descent, strongest of the three.</span></span>
+        </label>
+        <div class="field" style="margin-top:6px;">
+          <label>Perturbation budget (ε / 255) <span class="val" id="eps-val">8</span></label>
+          <input type="range" id="eps" min="1" max="16" value="8">
+          <div class="default-note">Default: 8. Only applies if an attack above is checked.</div>
+        </div>
+        <div class="meter">
+          <div class="meter-label"><span>Attack strength</span><span id="attack-strength-val">0%</span></div>
+          <div class="meter-track"><div class="meter-fill attack" id="attack-strength-bar"></div></div>
+        </div>
+      </div>
+
+      <div class="panel focus-panel defense">
+        <h2>🛡 Robustness defenses <small>optional</small></h2>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-pgdtrain">
+          <span class="cb-text"><span class="cb-title">PGD adversarial training</span><span class="cb-sub">Train on PGD-perturbed batches each epoch. Strongest, slowest.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-fgsmtrain">
+          <span class="cb-text"><span class="cb-title">FGSM adversarial training</span><span class="cb-sub">Train on single-step FGSM-perturbed batches. Cheaper, less robust than PGD training.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-freeat">
+          <span class="cb-text"><span class="cb-title">Free adversarial training</span><span class="cb-sub">Recycles gradients across mini-batches — near-PGD robustness at a fraction of the cost.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-mart">
+          <span class="cb-text"><span class="cb-title">MART</span><span class="cb-sub">Weights misclassified examples more heavily during adversarial training.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-trades">
+          <span class="cb-text"><span class="cb-title">TRADES</span><span class="cb-sub">Trades clean accuracy for robustness via a KL regularizer.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-smoothing">
+          <span class="cb-text"><span class="cb-title">Randomized smoothing</span><span class="cb-sub">Gaussian noise averaging at inference time.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-ensemble">
+          <span class="cb-text"><span class="cb-title">Ensemble adversarial training</span><span class="cb-sub">Trains against attacks transferred from auxiliary models.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-inputtransform">
+          <span class="cb-text"><span class="cb-title">Input transformation defense</span><span class="cb-sub">JPEG compression / random resize-pad before inference.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-featuresqueeze">
+          <span class="cb-text"><span class="cb-title">Feature squeezing</span><span class="cb-sub">Reduces color depth / smooths input to strip adversarial noise.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-distillation">
+          <span class="cb-text"><span class="cb-title">Defensive distillation</span><span class="cb-sub">Trains on softened teacher-model probabilities to flatten the loss surface.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-gradreg">
+          <span class="cb-text"><span class="cb-title">Gradient regularization</span><span class="cb-sub">Penalizes input-gradient norm during training.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-labelsmooth">
+          <span class="cb-text"><span class="cb-title">Label smoothing</span><span class="cb-sub">Softens one-hot targets to reduce overconfidence.</span></span>
+        </label>
+        <div class="meter">
+          <div class="meter-label"><span>Defense strength</span><span id="defense-strength-val">0%</span></div>
+          <div class="meter-track"><div class="meter-fill defense" id="defense-strength-bar"></div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="run-bar">
+    <div class="run-bar-info">
+      <span class="run-bar-label">Ready to run</span>
+      <span class="run-bar-hint">Everything above is optional — anything left unchecked just uses its default.</span>
+    </div>
+    <div class="btn-row run-bar-buttons">
+      <button class="primary" id="start-btn">▶ Start run</button>
+      <button class="stop" id="stop-btn" disabled>■ Stop</button>
+    </div>
+  </div>
+
+  <div class="grid">
+
+    <!-- LEFT: CONTROLS -->
+    <div class="col-left">
+
+      <div class="panel">
+        <h2>Model &amp; Data</h2>
+
+        <div class="field">
+          <label>Architecture</label>
+          <select id="arch">
+            <option value="mobilenet_v1" selected>MobileNet V1 (default)</option>
+            <option value="mobilenet_v2">MobileNet V2</option>
+            <option value="mobilenet_v3s">MobileNet V3 – Small</option>
+            <option value="squeezenet">SqueezeNet</option>
+            <option value="shufflenet_v2">ShuffleNet V2</option>
+            <option value="efficientnet_lite0">EfficientNet-Lite0</option>
+            <option value="custom">Custom Conv×3 → FC</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Dataset</label>
+          <select id="dataset">
+            <option value="cifar10" selected>CIFAR-10 (default)</option>
+            <option value="cifar100">CIFAR-100</option>
+            <option value="mnist">MNIST</option>
+            <option value="fmnist">Fashion-MNIST</option>
+            <option value="svhn">SVHN</option>
+            <option value="stl10">STL-10</option>
+            <option value="tinyimagenet">Tiny-ImageNet</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Input resolution <span class="val" id="res-val">32 × 32</span></label>
+          <input type="range" id="res" min="32" max="224" step="1" value="32">
+          <div class="default-note">Default: 32px. Range: 32–224px.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Hyperparameters</h2>
+
+        <div class="field">
+          <label>Learning rate <span class="val" id="lr-val">0.0100</span></label>
+          <input type="range" id="lr" min="1" max="100" value="30">
+          <div class="default-note">Default: 0.0100</div>
+        </div>
+
+        <div class="field">
+          <label>Batch size <span class="val" id="bs-val">32</span></label>
+          <input type="range" id="bs" min="0" max="5" value="2">
+          <div class="default-note">Default: 32</div>
+        </div>
+
+        <div class="field">
+          <label>Epochs <span class="val" id="ep-val">20</span></label>
+          <input type="range" id="ep" min="5" max="60" value="20">
+          <div class="default-note">Default: 20</div>
+        </div>
+
+        <div class="field">
+          <label>Dropout <span class="val" id="do-val">0.25</span></label>
+          <input type="range" id="do" min="0" max="70" value="25">
+          <div class="default-note">Default: 0.25</div>
+        </div>
+
+        <div class="field">
+          <label>Optimizer</label>
+          <select id="opt">
+            <option selected>Adam</option>
+            <option>SGD + Momentum</option>
+            <option>RMSProp</option>
+            <option>SAM (Sharpness-Aware Minimization)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Seed <span class="val" id="seed-display">1024</span></label>
+          <input type="number" id="seed" value="1024">
+          <label class="checkbox-row" style="margin-top:10px;">
+            <input type="checkbox" id="seed-variation">
+            <span class="cb-text">
+              <span class="cb-title">Randomize seed each run</span>
+              <span class="cb-sub">Off by default — reuses the fixed seed above.</span>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Pooling <small>optional</small></h2>
+        <label class="checkbox-row">
+          <input type="checkbox" id="spp">
+          <span class="cb-text">
+            <span class="cb-title">Spatial Pyramid Pooling</span>
+            <span class="cb-sub">Fixed multi-scale bins before the FC head. Off by default.</span>
+          </span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="aspp">
+          <span class="cb-text">
+            <span class="cb-title">Adaptive Pyramid Pooling</span>
+            <span class="cb-sub">Bin sizes adapt to input resolution. Off by default; overrides fixed SPP if both are checked.</span>
+          </span>
+        </label>
+      </div>
+
+      <div class="panel">
+        <h2>Training strategy <small>optional</small></h2>
+        <label class="checkbox-row">
+          <input type="checkbox" id="autotune">
+          <span class="cb-text">
+            <span class="cb-title">Auto-tune hyperparameters</span>
+            <span class="cb-sub">Trials a few lr / dropout / batch combos first and adopts the best before the full run.</span>
+          </span>
+        </label>
+        <div class="field" id="autotune-options" style="display:none; margin-left:27px;">
+          <label>Search method</label>
+          <select id="tune-method">
+            <option value="random" selected>Random search</option>
+            <option value="grid">Grid search</option>
+            <option value="bayesian">Bayesian optimization</option>
+          </select>
+          <div class="field" style="margin-top:12px;">
+            <label>Trials <span class="val" id="tune-trials-val">5</span></label>
+            <input type="range" id="tune-trials" min="3" max="12" value="5">
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="earlystop">
+          <span class="cb-text">
+            <span class="cb-title">Early stopping</span>
+            <span class="cb-sub">Stops the run once val. accuracy stalls, instead of always finishing all epochs.</span>
+          </span>
+        </label>
+        <div class="field" id="earlystop-options" style="display:none; margin-left:27px;">
+          <label>Patience (epochs) <span class="val" id="patience-val">5</span></label>
+          <input type="range" id="patience" min="2" max="15" value="5">
+          <div class="default-note">Default: 5. Stops if accuracy doesn't improve by ≥0.3% for this many epochs.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER: VISUALIZATION -->
+    <div class="panel center-panel">
+      <h2>Network activity <span id="epoch-tag" style="color:var(--text-dim); font-family:var(--display-font); text-transform:none; letter-spacing:0; font-size:13px;">epoch 0 / 20</span></h2>
+      <svg id="network-svg" viewBox="0 0 760 260"></svg>
+
+      <div class="metrics-row">
+        <div class="metric-card loss">
+          <div class="label">Training loss</div>
+          <div class="value" id="loss-val">—</div>
+        </div>
+        <div class="metric-card acc">
+          <div class="label">Clean val. accuracy</div>
+          <div class="value" id="acc-val">—</div>
+        </div>
+        <div class="metric-card robust hidden" id="robust-card">
+          <div class="label">Adversarial accuracy</div>
+          <div class="value" id="robust-val">—</div>
+        </div>
+      </div>
+
+      <canvas id="chart" width="700" height="180"></canvas>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--gold-deep);"></span> loss</span>
+        <span><span class="swatch" style="background:var(--gold-bright);"></span> clean accuracy</span>
+        <span id="robust-legend" style="display:none;"><span class="swatch" style="background:var(--danger);"></span> adversarial accuracy</span>
+      </div>
+    </div>
+
+    <!-- RIGHT: RUN INFO / LOG -->
+    <div class="panel">
+      <h2>Run details</h2>
+      <div class="kv"><span>Model</span><span id="rd-model">MobileNet V1</span></div>
+      <div class="kv"><span>Dataset</span><span id="rd-dataset">CIFAR-10</span></div>
+      <div class="kv"><span>Input shape</span><span id="rd-shape">32×32×3</span></div>
+      <div class="kv"><span>Pooling</span><span id="rd-pool">none</span></div>
+      <div class="kv"><span>Optimizer</span><span id="rd-opt">Adam</span></div>
+      <div class="kv"><span>Attacks</span><span id="rd-attacks">none</span></div>
+      <div class="kv"><span>Defenses</span><span id="rd-defenses">none</span></div>
+      <div class="kv"><span>Seed used</span><span id="rd-seed">1024</span></div>
+
+      <div class="section-divider"></div>
+      <h2>Log</h2>
+      <div id="log">
+        <div class="log-line">Console ready. Set options and start a run — everything above is optional.</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+
+  const lr=$('lr'), bs=$('bs'), ep=$('ep'), doEl=$('do'), res=$('res'), eps=$('eps');
+  const lrVal=$('lr-val'), bsVal=$('bs-val'), epVal=$('ep-val'), doVal=$('do-val'), resVal=$('res-val'), epsVal=$('eps-val');
+  const seedInput=$('seed'), seedDisplay=$('seed-display'), seedVariation=$('seed-variation');
+  const archSel=$('arch'), datasetSel=$('dataset'), optSel=$('opt');
+  const sppBox=$('spp'), asppBox=$('aspp');
+  const atkFgsm=$('atk-fgsm'), atkIfgsm=$('atk-ifgsm'), atkPgd=$('atk-pgd');
+  const defPgd=$('def-pgdtrain'), defFgsm=$('def-fgsmtrain'), defFreeat=$('def-freeat'), defMart=$('def-mart'), defTrades=$('def-trades'), defSmooth=$('def-smoothing'),
+        defEnsemble=$('def-ensemble'), defInputT=$('def-inputtransform'), defFeatureSq=$('def-featuresqueeze'), defDistill=$('def-distillation'), defGrad=$('def-gradreg'), defLabel=$('def-labelsmooth');
+  const autotuneBox=$('autotune'), autotuneOptions=$('autotune-options'), tuneMethod=$('tune-method'), tuneTrials=$('tune-trials'), tuneTrialsVal=$('tune-trials-val');
+  const earlystopBox=$('earlystop'), earlystopOptions=$('earlystop-options'), patience=$('patience'), patienceVal=$('patience-val');
+  const attackStrengthBar=$('attack-strength-bar'), attackStrengthVal=$('attack-strength-val');
+  const defenseStrengthBar=$('defense-strength-bar'), defenseStrengthVal=$('defense-strength-val');
+  const startBtn=$('start-btn'), stopBtn=$('stop-btn'), statusText=$('status-text'), epochTag=$('epoch-tag');
+  const lossValEl=$('loss-val'), accValEl=$('acc-val'), robustValEl=$('robust-val'), robustCard=$('robust-card'), robustLegend=$('robust-legend');
+  const log=$('log');
+
+  const batchSizes=[8,16,32,64,128,256];
+
+  function syncLabels(){
+    const rate=(0.0001*Math.pow(10,(lr.value/100)*2.5)).toFixed(4);
+    lrVal.textContent=rate;
+    bsVal.textContent=batchSizes[bs.value];
+    epVal.textContent=ep.value;
+    doVal.textContent=(doEl.value/100).toFixed(2);
+    resVal.textContent=`${res.value} × ${res.value}`;
+    epsVal.textContent=eps.value;
+    seedDisplay.textContent = seedVariation.checked ? 'random / run' : seedInput.value;
+  }
+  [lr,bs,ep,doEl,res,eps,seedInput,seedVariation].forEach(el=>el.addEventListener('input',syncLabels));
+  syncLabels();
+
+  // ---------- Attack / Defense strength (live, independent of run state) ----------
+  function attackStrengthFrom(attacks, epsilon){
+    if(!attacks.length) return 0;
+    const base = Math.max(...attacks.map(a=> a==='PGD'?0.60 : a==='I-FGSM'?0.45 : 0.30));
+    return Math.min(1, base + (epsilon/16)*0.35);
+  }
+  function defenseStrengthFrom(defenses){
+    const named = ['PGD adversarial training','FGSM adversarial training','Free adversarial training','MART','TRADES'];
+    return Math.min(1, (defenses.includes('PGD adversarial training')?0.35:0)
+      + (defenses.includes('Free adversarial training')?0.30:0)
+      + (defenses.includes('FGSM adversarial training')?0.20:0)
+      + (defenses.includes('MART')?0.22:0)
+      + (defenses.includes('TRADES')?0.18:0)
+      + defenses.filter(d=>!named.includes(d)).length*0.06);
+  }
+  function currentAttackList(){
+    const a=[]; if(atkFgsm.checked)a.push('FGSM'); if(atkIfgsm.checked)a.push('I-FGSM'); if(atkPgd.checked)a.push('PGD'); return a;
+  }
+  function currentDefenseList(){
+    const d=[];
+    if(defPgd.checked) d.push('PGD adversarial training');
+    if(defFgsm.checked) d.push('FGSM adversarial training');
+    if(defFreeat.checked) d.push('Free adversarial training');
+    if(defMart.checked) d.push('MART');
+    if(defTrades.checked) d.push('TRADES');
+    if(defSmooth.checked) d.push('Randomized smoothing');
+    if(defEnsemble.checked) d.push('Ensemble adversarial training');
+    if(defInputT.checked) d.push('Input transformation defense');
+    if(defFeatureSq.checked) d.push('Feature squeezing');
+    if(defDistill.checked) d.push('Defensive distillation');
+    if(defGrad.checked) d.push('Gradient regularization');
+    if(defLabel.checked) d.push('Label smoothing');
+    return d;
+  }
+  function updateStrengthMeters(){
+    const atkPct = Math.round(attackStrengthFrom(currentAttackList(), parseInt(eps.value))*100);
+    const defPct = Math.round(defenseStrengthFrom(currentDefenseList())*100);
+    attackStrengthBar.style.width = atkPct+'%';
+    attackStrengthVal.textContent = atkPct+'%';
+    defenseStrengthBar.style.width = defPct+'%';
+    defenseStrengthVal.textContent = defPct+'%';
+  }
+  [atkFgsm,atkIfgsm,atkPgd,eps].forEach(el=>el.addEventListener('input',updateStrengthMeters));
+  [defPgd,defFgsm,defFreeat,defMart,defTrades,defSmooth,defEnsemble,defInputT,defFeatureSq,defDistill,defGrad,defLabel].forEach(el=>el.addEventListener('change',updateStrengthMeters));
+  updateStrengthMeters();
+
+  // ---------- Training strategy toggles ----------
+  autotuneBox.addEventListener('change', ()=>{ autotuneOptions.style.display = autotuneBox.checked ? 'block' : 'none'; });
+  earlystopBox.addEventListener('change', ()=>{ earlystopOptions.style.display = earlystopBox.checked ? 'block' : 'none'; });
+  tuneTrials.addEventListener('input', ()=>{ tuneTrialsVal.textContent = tuneTrials.value; });
+  patience.addEventListener('input', ()=>{ patienceVal.textContent = patience.value; });
+
+  const archNames={
+    mobilenet_v1:'MobileNet V1', mobilenet_v2:'MobileNet V2', mobilenet_v3s:'MobileNet V3 – Small',
+    squeezenet:'SqueezeNet', shufflenet_v2:'ShuffleNet V2', efficientnet_lite0:'EfficientNet-Lite0', custom:'Custom Conv×3 → FC'
+  };
+  const datasetNames={
+    cifar10:'CIFAR-10', cifar100:'CIFAR-100', mnist:'MNIST', fmnist:'Fashion-MNIST', svhn:'SVHN', stl10:'STL-10', tinyimagenet:'Tiny-ImageNet'
+  };
+  // rough accuracy ceilings per dataset, purely for a believable simulated curve
+  const datasetCeiling={ cifar10:0.94, cifar100:0.75, mnist:0.995, fmnist:0.93, svhn:0.96, stl10:0.85, tinyimagenet:0.66 };
+  const channelsFor={ mnist:1, fmnist:1 };
+
+  // ---------- Network SVG ----------
+  const svg=$('network-svg');
+  function buildNetwork(){
+    svg.innerHTML='';
+    const width=760, height=260;
+    const labels=['input','conv/dw','conv/dw','conv/dw','fc / out'];
+    const sizes=[6,7,6,5,4];
+    const xStep=width/(sizes.length+1);
+    const nodesByLayer=[];
+    sizes.forEach((count,li)=>{
+      const x=xStep*(li+1);
+      const yStep=height/(count+1);
+      const nodes=[];
+      for(let n=0;n<count;n++) nodes.push({x, y:yStep*(n+1)});
+      nodesByLayer.push(nodes);
+      const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x',x); t.setAttribute('y',height-6);
+      t.setAttribute('class','layer-label');
+      t.textContent=labels[li];
+      svg.appendChild(t);
+    });
+    for(let li=0; li<nodesByLayer.length-1; li++){
+      nodesByLayer[li].forEach(a=>{
+        nodesByLayer[li+1].forEach(b=>{
+          const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+          line.setAttribute('x1',a.x); line.setAttribute('y1',a.y);
+          line.setAttribute('x2',b.x); line.setAttribute('y2',b.y);
+          line.setAttribute('class','edge');
+          svg.appendChild(line);
+        });
+      });
+    }
+    nodesByLayer.forEach(layer=>layer.forEach(n=>{
+      const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      c.setAttribute('cx',n.x); c.setAttribute('cy',n.y); c.setAttribute('r',7);
+      c.setAttribute('class','node');
+      svg.appendChild(c);
+    }));
+    return {nodesByLayer};
+  }
+  let net=buildNetwork();
+
+  function pulseForward(){
+    const layers=svg.querySelectorAll('circle');
+    let li=0;
+    const nodesByLayer=net.nodesByLayer;
+    const interval=setInterval(()=>{
+      layers.forEach(n=>n.classList.remove('active'));
+      if(li<nodesByLayer.length){
+        let idx=0;
+        nodesByLayer.forEach((layer,i)=>{
+          if(i===li) layer.forEach(()=>{ layers[idx].classList.add('active'); idx++; });
+          else idx+=layer.length;
+        });
+        li++;
+      } else clearInterval(interval);
+    },140);
+  }
+
+  // ---------- Chart ----------
+  const canvas=$('chart'); const ctx=canvas.getContext('2d');
+  let lossHistory=[], accHistory=[], robustHistory=[];
+
+  function drawChart(){
+    const w=canvas.width, h=canvas.height;
+    ctx.clearRect(0,0,w,h);
+    ctx.strokeStyle='#2A2D38'; ctx.lineWidth=1;
+    for(let i=0;i<=4;i++){ const y=(h/4)*i; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+    if(lossHistory.length<2) return;
+    const maxLoss=Math.max(...lossHistory,1);
+    const drawSeries=(data,color,maxVal,invert,dashed)=>{
+      ctx.beginPath();
+      ctx.strokeStyle=color; ctx.lineWidth=2;
+      ctx.setLineDash(dashed?[5,4]:[]);
+      data.forEach((v,i)=>{
+        const x=(w/(data.length-1||1))*i;
+        const norm=invert?(1-v/maxVal):v;
+        const y=h - norm*h*0.9 - h*0.05;
+        i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+    };
+    drawSeries(lossHistory,'#C9962E',maxLoss,true,false);
+    drawSeries(accHistory,'#FFD84D',1,false,false);
+    if(robustHistory.length>1) drawSeries(robustHistory,'#E8615D',1,false,true);
+  }
+
+  // ---------- Fake training loop ----------
+  let running=false, epochTimer=null;
+
+  function addLog(text,epochNum){
+    const div=document.createElement('div');
+    div.className='log-line';
+    div.innerHTML=(epochNum!==undefined?`<span class="ep">[epoch ${epochNum}]</span> `:'')+text;
+    log.prepend(div);
+  }
+
+  function collectSettings(){
+    const attacks = currentAttackList();
+    const defenses = currentDefenseList();
+
+    let pooling='none';
+    if(asppBox.checked) pooling='Adaptive Pyramid Pooling';
+    else if(sppBox.checked) pooling='Spatial Pyramid Pooling';
+
+    const channels = channelsFor[datasetSel.value] || 3;
+    const seedUsed = seedVariation.checked ? Math.floor(1000+Math.random()*9000) : parseInt(seedInput.value||1024);
+
+    return {
+      arch:archSel.value, archName:archNames[archSel.value],
+      dataset:datasetSel.value, datasetName:datasetNames[datasetSel.value],
+      resolution:parseInt(res.value), channels,
+      pooling, optimizer:optSel.value,
+      attacks, defenses, epsilon:parseInt(eps.value),
+      seedUsed
+    };
+  }
+
+  function updateRunDetails(s){
+    $('rd-model').textContent=s.archName;
+    $('rd-dataset').textContent=s.datasetName;
+    $('rd-shape').textContent=`${s.resolution}×${s.resolution}×${s.channels}`;
+    $('rd-pool').textContent=s.pooling;
+    $('rd-opt').textContent=s.optimizer;
+    $('rd-attacks').textContent=s.attacks.length?s.attacks.join(', '):'none';
+    $('rd-defenses').textContent=s.defenses.length?s.defenses.join(', '):'none';
+    $('rd-seed').textContent=s.seedUsed;
+  }
+
+  function runAutoTune(datasetKey, callback){
+    const method = tuneMethod.value;
+    const trials = parseInt(tuneTrials.value);
+    const ceiling = datasetCeiling[datasetKey] ?? 0.9;
+    addLog(`Auto-tuning (${method}) — trying ${trials} lr / batch / dropout combinations…`);
+
+    let best = { score:-1, lrPct:parseInt(lr.value), bsIdx:parseInt(bs.value), doPct:parseInt(doEl.value) };
+    for(let t=1;t<=trials;t++){
+      const lrPct = 10 + Math.floor(Math.random()*80);
+      const bsIdx = Math.floor(Math.random()*batchSizes.length);
+      const doPct = 10 + Math.floor(Math.random()*45);
+      // simple simulated score: mid-range lr and moderate dropout tend to score higher, with noise
+      const lrScore = 1 - Math.abs(lrPct-35)/65;
+      const doScore = 1 - Math.abs(doPct-28)/45;
+      const bsScore = 1 - Math.abs(bsIdx-2)/5;
+      const score = (lrScore*0.5 + doScore*0.3 + bsScore*0.2) * ceiling + (Math.random()-0.5)*0.03;
+      addLog(`Trial ${t}/${trials} — lr≈${(0.0001*Math.pow(10,(lrPct/100)*2.5)).toFixed(4)}, batch ${batchSizes[bsIdx]}, dropout ${(doPct/100).toFixed(2)} → est. score ${score.toFixed(3)}`);
+      if(score>best.score) best={score,lrPct,bsIdx,doPct};
+    }
+    lr.value=best.lrPct; bs.value=best.bsIdx; doEl.value=best.doPct;
+    syncLabels();
+    addLog(`Best found — lr ${lrVal.textContent}, batch ${bsVal.textContent}, dropout ${doVal.textContent}. Adopting for the full run.`);
+    callback();
+  }
+
+  function startRun(){
+    startBtn.disabled=true; stopBtn.disabled=false;
+    const controls=[lr,bs,ep,doEl,res,eps,archSel,datasetSel,optSel,seedInput,seedVariation,
+      sppBox,asppBox,atkFgsm,atkIfgsm,atkPgd,defPgd,defFgsm,defFreeat,defMart,defTrades,defSmooth,defEnsemble,defInputT,defFeatureSq,defDistill,defGrad,defLabel,
+      autotuneBox,tuneMethod,tuneTrials,earlystopBox,patience];
+    controls.forEach(el=>el.disabled=true);
+    statusText.textContent = autotuneBox.checked ? 'TUNING' : 'TRAINING';
+    log.innerHTML='';
+
+    const datasetKeyNow = datasetSel.value;
+    if(autotuneBox.checked){
+      runAutoTune(datasetKeyNow, ()=>{ statusText.textContent='TRAINING'; beginTraining(); });
+    } else {
+      beginTraining();
+    }
+  }
+
+  function beginTraining(){
+    running=true;
+    const s=collectSettings();
+    updateRunDetails(s);
+
+    const hasAttack = s.attacks.length>0;
+    robustCard.classList.toggle('hidden', !hasAttack);
+    robustLegend.style.display = hasAttack ? 'flex' : 'none';
+
+    lossHistory=[]; accHistory=[]; robustHistory=[];
+
+    const totalEpochs=parseInt(ep.value);
+    let epochN=0;
+    let loss=2.3;
+    let acc=0.08;
+    const ceiling=datasetCeiling[s.dataset] ?? 0.9;
+    const lrFactor=parseFloat(lrVal.textContent);
+
+    // defense strength lowers the robustness gap; more defenses + adversarial training close it further
+    const defenseStrength = defenseStrengthFrom(s.defenses);
+    const epsPenalty = s.epsilon/16; // 0..1
+
+    const useEarlyStop = earlystopBox.checked;
+    const patienceEpochs = parseInt(patience.value);
+    let bestAcc = -1, stallCount = 0;
+
+    addLog(`Run started — ${s.archName} on ${s.datasetName} @ ${s.resolution}px, optimizer ${s.optimizer}, lr ${lrFactor}, batch ${bsVal.textContent}, dropout ${doVal.textContent}, pooling: ${s.pooling}${hasAttack ? `, attacks: ${s.attacks.join('/')} (ε=${s.epsilon}/255)` : ''}${s.defenses.length ? `, defenses: ${s.defenses.join(', ')}` : ''}${useEarlyStop ? `, early stopping: patience ${patienceEpochs}` : ''}.`);
+
+    epochTimer=setInterval(()=>{
+      epochN++;
+      epochTag.textContent=`epoch ${epochN} / ${totalEpochs}`;
+
+      const decay=0.88+Math.random()*0.05;
+      loss=Math.max(0.05, loss*decay + (Math.random()-0.5)*0.03);
+      acc=Math.min(ceiling, acc + (ceiling-acc)*0.14 + (Math.random()-0.5)*0.012);
+
+      lossHistory.push(loss); accHistory.push(acc);
+      lossValEl.textContent=loss.toFixed(3);
+      accValEl.textContent=(acc*100).toFixed(1)+'%';
+
+      let robustLogPart='';
+      if(hasAttack){
+        const baseGap = 0.12 + epsPenalty*0.35 + (s.attacks.includes('PGD')?0.10:s.attacks.includes('I-FGSM')?0.06:0.03);
+        const gap = Math.max(0.01, baseGap*(1-defenseStrength));
+        const robust = Math.max(0.01, acc - gap + (Math.random()-0.5)*0.01);
+        robustHistory.push(robust);
+        robustValEl.textContent=(robust*100).toFixed(1)+'%';
+        robustLogPart = ` · adv_acc ${(robust*100).toFixed(1)}%`;
+      }
+
+      drawChart();
+      pulseForward();
+      addLog(`loss ${loss.toFixed(3)} · val_acc ${(acc*100).toFixed(1)}%${robustLogPart}`, epochN);
+
+      if(useEarlyStop){
+        if(acc > bestAcc + 0.003){ bestAcc=acc; stallCount=0; }
+        else { stallCount++; }
+        if(stallCount>=patienceEpochs){
+          addLog(`No improvement ≥0.3% for ${patienceEpochs} epochs — early stopping triggered.`);
+          stopRun(true);
+          return;
+        }
+      }
+
+      if(epochN>=totalEpochs) stopRun(true);
+    },550);
+  }
+
+  function stopRun(completed){
+    clearInterval(epochTimer);
+    running=false;
+    startBtn.disabled=false; stopBtn.disabled=true;
+    const controls=[lr,bs,ep,doEl,res,eps,archSel,datasetSel,optSel,seedInput,seedVariation,
+      sppBox,asppBox,atkFgsm,atkIfgsm,atkPgd,defPgd,defFgsm,defFreeat,defMart,defTrades,defSmooth,defEnsemble,defInputT,defFeatureSq,defDistill,defGrad,defLabel,
+      autotuneBox,tuneMethod,tuneTrials,earlystopBox,patience];
+    controls.forEach(el=>el.disabled=false);
+    statusText.textContent=completed?'COMPLETE':'STOPPED';
+    addLog(completed?'Run complete.':'Run stopped by user.');
+  }
+
+  startBtn.addEventListener('click',startRun);
+  stopBtn.addEventListener('click',()=>stopRun(false));
+
+  drawChart();
+})();
+</script>
+</body>
+</html>
