@@ -1,0 +1,11 @@
+torch>=2.0
+torchvision>=0.15
+numpy
+scipy
+matplotlib
+openpyxl
+Pillow
+PyWavelets
+thop
+# optional, for real Bayesian/TPE hyperparameter search:
+optuna
