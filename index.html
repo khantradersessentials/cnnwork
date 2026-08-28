@@ -235,6 +235,31 @@
   .run-bar-buttons{ margin-top:0; flex:0 0 auto; min-width:280px; }
   .run-bar-buttons button{ padding:14px 22px; font-size:15px; }
   @media (max-width:700px){ .run-bar{ flex-direction:column; align-items:stretch; } .run-bar-buttons{ min-width:0; } }
+  .mini-run-row{ margin-bottom:6px; }
+  .mini-run-row button{ padding:10px 14px; font-size:12.5px; }
+
+  /* ---------- Stats / GradCAM / Failure cases ---------- */
+  .stats-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  .stats-table th, .stats-table td{ text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+  .stats-table th{ color:var(--text-dim); font-weight:600; text-transform:uppercase; font-size:10.5px; letter-spacing:0.5px; }
+  .stats-table td{ color:var(--gold); font-family:var(--display-font); }
+  .stats-empty{ color:var(--text-dim); font-size:12.5px; }
+
+  .gradcam-row{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .gradcam-row img{ width:96px; height:96px; border-radius:4px; border:1px solid var(--line); }
+  .gradcam-note{ color:var(--text-dim); font-size:11.5px; max-width:340px; }
+
+  .failure-card{ display:flex; gap:12px; align-items:center; padding:8px 0; border-bottom:1px dashed rgba(255,255,255,0.06); }
+  .failure-card img{ width:64px; height:64px; border-radius:4px; border:1px solid var(--line); flex-shrink:0; }
+  .failure-card .fc-text{ font-size:12px; color:var(--text-dim); }
+  .failure-card .fc-text b{ color:var(--gold); }
+
+  .novel-badge{ background:var(--gold-bright); color:#1A1400; font-size:9.5px; font-weight:700; padding:2px 6px; border-radius:3px; margin-left:6px; letter-spacing:0.5px; }
+
+  .run-history-item{ display:flex; justify-content:space-between; gap:10px; font-size:12.5px; padding:8px 0; border-bottom:1px solid var(--line); color:var(--gold); }
+  .run-history-item span:last-child{ color:var(--text-dim); font-family:var(--display-font); text-align:right; }
+  #run-history-list{ max-height:220px; overflow-y:auto; margin-bottom:16px; }
+  .report-panel{ display:flex; justify-content:space-between; align-items:center; gap:20px; flex-wrap:wrap; margin-top:28px; }
 
   /* ---------- Attack / Defense focus styling ---------- */
   .focus-panel{ border-width:1.5px; }
@@ -352,6 +377,22 @@
           <input type="checkbox" id="def-labelsmooth">
           <span class="cb-text"><span class="cb-title">Label smoothing</span><span class="cb-sub">Softens one-hot targets to reduce overconfidence.</span></span>
         </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-segmentation">
+          <span class="cb-text"><span class="cb-title">Segmentation-guided input purification</span><span class="cb-sub">Masks the input to the segmented foreground before classification, discarding background perturbation.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-vit">
+          <span class="cb-text"><span class="cb-title">ViT robust backbone</span><span class="cb-sub">Swaps the conv backbone for a Vision Transformer — different attention-based robustness profile.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-transformer">
+          <span class="cb-text"><span class="cb-title">Transformer encoder refinement</span><span class="cb-sub">Adds a lightweight transformer encoder block after conv features for global context.</span></span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="def-novel">
+          <span class="cb-text"><span class="cb-title">Frequency-Domain Adversarial Purification <span class="novel-badge">NOVEL / EXPERIMENTAL</span></span><span class="cb-sub">Proposed technique: wavelet-domain denoising fused with adversarial fine-tuning. Flagged as experimental — not a validated published baseline.</span></span>
+        </label>
         <div class="meter">
           <div class="meter-label"><span>Defense strength</span><span id="defense-strength-val">0%</span></div>
           <div class="meter-track"><div class="meter-fill defense" id="defense-strength-bar"></div></div>
@@ -367,8 +408,8 @@
       <span class="run-bar-hint">Everything above is optional — anything left unchecked just uses its default.</span>
     </div>
     <div class="btn-row run-bar-buttons">
-      <button class="primary" id="start-btn">▶ Start run</button>
-      <button class="stop" id="stop-btn" disabled>■ Stop</button>
+      <button class="primary start-run-btn">▶ Start run</button>
+      <button class="stop stop-run-btn" disabled>■ Stop</button>
     </div>
   </div>
 
@@ -522,6 +563,10 @@
 
     <!-- CENTER: VISUALIZATION -->
     <div class="panel center-panel">
+      <div class="btn-row mini-run-row">
+        <button class="primary start-run-btn">▶ Start run</button>
+        <button class="stop stop-run-btn" disabled>■ Stop</button>
+      </div>
       <h2>Network activity <span id="epoch-tag" style="color:var(--text-dim); font-family:var(--display-font); text-transform:none; letter-spacing:0; font-size:13px;">epoch 0 / 20</span></h2>
       <svg id="network-svg" viewBox="0 0 760 260"></svg>
 
@@ -534,17 +579,21 @@
           <div class="label">Clean val. accuracy</div>
           <div class="value" id="acc-val">—</div>
         </div>
-        <div class="metric-card robust hidden" id="robust-card">
-          <div class="label">Adversarial accuracy</div>
-          <div class="value" id="robust-val">—</div>
-        </div>
+        <div id="adv-metrics-container" style="display:contents;"></div>
       </div>
 
       <canvas id="chart" width="700" height="180"></canvas>
       <div class="legend">
         <span><span class="swatch" style="background:var(--gold-deep);"></span> loss</span>
         <span><span class="swatch" style="background:var(--gold-bright);"></span> clean accuracy</span>
-        <span id="robust-legend" style="display:none;"><span class="swatch" style="background:var(--danger);"></span> adversarial accuracy</span>
+        <span id="adv-legend-container" style="display:contents;"></span>
+      </div>
+
+      <div class="section-divider"></div>
+      <h2>Grad-CAM preview <small>simulated / illustrative</small></h2>
+      <div class="gradcam-row">
+        <img id="gradcam-img" src="" alt="Grad-CAM preview" style="display:none;">
+        <div class="gradcam-note" id="gradcam-note">Runs after a completed epoch loop — this dashboard simulates training, so the heatmap is a representative activation-style visualization, not computed from a real model.</div>
       </div>
     </div>
 
@@ -559,6 +608,17 @@
       <div class="kv"><span>Attacks</span><span id="rd-attacks">none</span></div>
       <div class="kv"><span>Defenses</span><span id="rd-defenses">none</span></div>
       <div class="kv"><span>Seed used</span><span id="rd-seed">1024</span></div>
+      <div class="kv"><span>FLOPs (est.)</span><span id="rd-flops">—</span></div>
+      <div class="kv"><span>Params (est.)</span><span id="rd-params">—</span></div>
+      <div class="kv"><span>Inference (est.)</span><span id="rd-inference">—</span></div>
+
+      <div class="section-divider"></div>
+      <h2>Statistical analysis <small>last run, 95% CI</small></h2>
+      <div id="stats-container"><div class="stats-empty">Run the model at least once to see mean / std / confidence intervals here.</div></div>
+
+      <div class="section-divider"></div>
+      <h2 id="failure-heading" style="display:none;">Failure case analysis <small>simulated</small></h2>
+      <div id="failure-container"></div>
 
       <div class="section-divider"></div>
       <h2>Log</h2>
@@ -568,7 +628,17 @@
     </div>
 
   </div>
+
+  <div class="panel report-panel">
+    <div style="flex:1; min-width:260px;">
+      <h2 style="margin-bottom:10px;">Run history &amp; report</h2>
+      <div id="run-history-list"><div class="stats-empty">No runs yet — completed and stopped runs will be listed here.</div></div>
+    </div>
+    <button class="primary" id="download-report-btn" style="flex:0 0 auto; min-width:240px;" disabled>⬇ Download Excel report</button>
+  </div>
 </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 
 <script>
 (function(){
@@ -581,14 +651,26 @@
   const sppBox=$('spp'), asppBox=$('aspp');
   const atkFgsm=$('atk-fgsm'), atkIfgsm=$('atk-ifgsm'), atkPgd=$('atk-pgd');
   const defPgd=$('def-pgdtrain'), defFgsm=$('def-fgsmtrain'), defFreeat=$('def-freeat'), defMart=$('def-mart'), defTrades=$('def-trades'), defSmooth=$('def-smoothing'),
-        defEnsemble=$('def-ensemble'), defInputT=$('def-inputtransform'), defFeatureSq=$('def-featuresqueeze'), defDistill=$('def-distillation'), defGrad=$('def-gradreg'), defLabel=$('def-labelsmooth');
+        defEnsemble=$('def-ensemble'), defInputT=$('def-inputtransform'), defFeatureSq=$('def-featuresqueeze'), defDistill=$('def-distillation'), defGrad=$('def-gradreg'), defLabel=$('def-labelsmooth'),
+        defSegmentation=$('def-segmentation'), defVit=$('def-vit'), defTransformer=$('def-transformer'), defNovel=$('def-novel');
   const autotuneBox=$('autotune'), autotuneOptions=$('autotune-options'), tuneMethod=$('tune-method'), tuneTrials=$('tune-trials'), tuneTrialsVal=$('tune-trials-val');
   const earlystopBox=$('earlystop'), earlystopOptions=$('earlystop-options'), patience=$('patience'), patienceVal=$('patience-val');
   const attackStrengthBar=$('attack-strength-bar'), attackStrengthVal=$('attack-strength-val');
   const defenseStrengthBar=$('defense-strength-bar'), defenseStrengthVal=$('defense-strength-val');
-  const startBtn=$('start-btn'), stopBtn=$('stop-btn'), statusText=$('status-text'), epochTag=$('epoch-tag');
-  const lossValEl=$('loss-val'), accValEl=$('acc-val'), robustValEl=$('robust-val'), robustCard=$('robust-card'), robustLegend=$('robust-legend');
+  const startBtns=document.querySelectorAll('.start-run-btn'), stopBtns=document.querySelectorAll('.stop-run-btn');
+  const statusText=$('status-text'), epochTag=$('epoch-tag');
+  const lossValEl=$('loss-val'), accValEl=$('acc-val');
+  const advMetricsContainer=$('adv-metrics-container'), advLegendContainer=$('adv-legend-container');
+  const gradcamImg=$('gradcam-img'), gradcamNote=$('gradcam-note');
+  const statsContainer=$('stats-container');
+  const failureHeading=$('failure-heading'), failureContainer=$('failure-container');
+  const runHistoryList=$('run-history-list'), downloadReportBtn=$('download-report-btn');
   const log=$('log');
+
+  function setRunButtonsDisabled(startDisabled, stopDisabled){
+    startBtns.forEach(b=>b.disabled=startDisabled);
+    stopBtns.forEach(b=>b.disabled=stopDisabled);
+  }
 
   const batchSizes=[8,16,32,64,128,256];
 
@@ -612,13 +694,16 @@
     return Math.min(1, base + (epsilon/16)*0.35);
   }
   function defenseStrengthFrom(defenses){
-    const named = ['PGD adversarial training','FGSM adversarial training','Free adversarial training','MART','TRADES'];
+    const named = ['PGD adversarial training','FGSM adversarial training','Free adversarial training','MART','TRADES','Frequency-Domain Adversarial Purification (novel)'];
     return Math.min(1, (defenses.includes('PGD adversarial training')?0.35:0)
       + (defenses.includes('Free adversarial training')?0.30:0)
       + (defenses.includes('FGSM adversarial training')?0.20:0)
       + (defenses.includes('MART')?0.22:0)
       + (defenses.includes('TRADES')?0.18:0)
-      + defenses.filter(d=>!named.includes(d)).length*0.06);
+      + (defenses.includes('Frequency-Domain Adversarial Purification (novel)')?0.15:0)
+      + (defenses.includes('ViT robust backbone')?0.10:0)
+      + (defenses.includes('Transformer encoder refinement')?0.08:0)
+      + defenses.filter(d=>!named.includes(d) && d!=='ViT robust backbone' && d!=='Transformer encoder refinement').length*0.06);
   }
   function currentAttackList(){
     const a=[]; if(atkFgsm.checked)a.push('FGSM'); if(atkIfgsm.checked)a.push('I-FGSM'); if(atkPgd.checked)a.push('PGD'); return a;
@@ -637,6 +722,10 @@
     if(defDistill.checked) d.push('Defensive distillation');
     if(defGrad.checked) d.push('Gradient regularization');
     if(defLabel.checked) d.push('Label smoothing');
+    if(defSegmentation.checked) d.push('Segmentation-guided input purification');
+    if(defVit.checked) d.push('ViT robust backbone');
+    if(defTransformer.checked) d.push('Transformer encoder refinement');
+    if(defNovel.checked) d.push('Frequency-Domain Adversarial Purification (novel)');
     return d;
   }
   function updateStrengthMeters(){
@@ -648,7 +737,7 @@
     defenseStrengthVal.textContent = defPct+'%';
   }
   [atkFgsm,atkIfgsm,atkPgd,eps].forEach(el=>el.addEventListener('input',updateStrengthMeters));
-  [defPgd,defFgsm,defFreeat,defMart,defTrades,defSmooth,defEnsemble,defInputT,defFeatureSq,defDistill,defGrad,defLabel].forEach(el=>el.addEventListener('change',updateStrengthMeters));
+  [defPgd,defFgsm,defFreeat,defMart,defTrades,defSmooth,defEnsemble,defInputT,defFeatureSq,defDistill,defGrad,defLabel,defSegmentation,defVit,defTransformer,defNovel].forEach(el=>el.addEventListener('change',updateStrengthMeters));
   updateStrengthMeters();
 
   // ---------- Training strategy toggles ----------
@@ -667,6 +756,78 @@
   // rough accuracy ceilings per dataset, purely for a believable simulated curve
   const datasetCeiling={ cifar10:0.94, cifar100:0.75, mnist:0.995, fmnist:0.93, svhn:0.96, stl10:0.85, tinyimagenet:0.66 };
   const channelsFor={ mnist:1, fmnist:1 };
+
+  // approximate published FLOPs (millions, @224px) and params (millions) per architecture — illustrative reference points
+  const MODEL_STATS={
+    mobilenet_v1:{flops224:569, params:4.2}, mobilenet_v2:{flops224:300, params:3.4},
+    mobilenet_v3s:{flops224:56, params:2.5}, squeezenet:{flops224:833, params:1.25},
+    shufflenet_v2:{flops224:146, params:2.3}, efficientnet_lite0:{flops224:407, params:4.7},
+    custom:{flops224:50, params:1.1}
+  };
+  const ATTACK_COLORS={ 'FGSM':'#FFB86B', 'I-FGSM':'#FF8C5A', 'PGD':'#FF4D4D' };
+  const ATTACK_GAP_BASE={ 'FGSM':0.05, 'I-FGSM':0.09, 'PGD':0.14 };
+
+  function estimateFlopsParams(archKey, resolution, defenses){
+    const base = MODEL_STATS[archKey] || MODEL_STATS.custom;
+    const scale = Math.pow(resolution/224, 2);
+    let flops = base.flops224 * scale;
+    let params = base.params;
+    if(defenses.includes('ViT robust backbone')){ params += 2.0; flops += 120*scale; }
+    if(defenses.includes('Transformer encoder refinement')){ params += 1.2; flops += 70*scale; }
+    const inferenceMs = flops/450 + 1.5 + Math.random()*0.8; // simulated CPU-equivalent estimate
+    return { flops, params, inferenceMs };
+  }
+
+  function computeStats(arr){
+    if(!arr || arr.length===0) return null;
+    const n=arr.length;
+    const mean=arr.reduce((a,b)=>a+b,0)/n;
+    const variance = n>1 ? arr.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(n-1) : 0;
+    const std=Math.sqrt(variance);
+    const margin = 1.96*std/Math.sqrt(n||1);
+    return { mean, std, n, ci:[mean-margin, mean+margin] };
+  }
+
+  function generateGradCAM(seedVal){
+    const c=document.createElement('canvas'); c.width=160; c.height=160;
+    const gctx=c.getContext('2d');
+    // synthetic base "input"
+    const grad=gctx.createLinearGradient(0,0,160,160);
+    grad.addColorStop(0,'#22314f'); grad.addColorStop(1,'#0f1830');
+    gctx.fillStyle=grad; gctx.fillRect(0,0,160,160);
+    // noise texture
+    for(let i=0;i<220;i++){
+      gctx.fillStyle=`rgba(255,255,255,${Math.random()*0.04})`;
+      gctx.fillRect(Math.random()*160, Math.random()*160, 2, 2);
+    }
+    // jet-style activation blob(s), seeded so it varies per run
+    const rand = (seedVal%97)/97;
+    const blobs = 2 + Math.floor(rand*2);
+    for(let b=0;b<blobs;b++){
+      const bx = 40 + Math.random()*80, by = 40 + Math.random()*80, r = 30+Math.random()*35;
+      const rg = gctx.createRadialGradient(bx,by,0,bx,by,r);
+      rg.addColorStop(0,'rgba(255,80,60,0.85)');
+      rg.addColorStop(0.5,'rgba(255,200,40,0.5)');
+      rg.addColorStop(1,'rgba(255,200,40,0)');
+      gctx.fillStyle=rg;
+      gctx.beginPath(); gctx.arc(bx,by,r,0,Math.PI*2); gctx.fill();
+    }
+    return c.toDataURL('image/png');
+  }
+
+  const GENERIC_CLASSES=['class A','class B','class C','class D','class E','class F'];
+  function generateFailureCases(s, count){
+    const cases=[];
+    for(let i=0;i<count;i++){
+      const trueLabel = GENERIC_CLASSES[Math.floor(Math.random()*GENERIC_CLASSES.length)];
+      let predLabel = GENERIC_CLASSES[Math.floor(Math.random()*GENERIC_CLASSES.length)];
+      if(predLabel===trueLabel) predLabel = GENERIC_CLASSES[(GENERIC_CLASSES.indexOf(predLabel)+1)%GENERIC_CLASSES.length];
+      const attack = s.attacks[Math.floor(Math.random()*s.attacks.length)];
+      const confidence = 0.5+Math.random()*0.42;
+      cases.push({ trueLabel, predLabel, attack, confidence, thumbnail: generateGradCAM(Math.floor(Math.random()*1000)) });
+    }
+    return cases;
+  }
 
   // ---------- Network SVG ----------
   const svg=$('network-svg');
@@ -729,7 +890,7 @@
 
   // ---------- Chart ----------
   const canvas=$('chart'); const ctx=canvas.getContext('2d');
-  let lossHistory=[], accHistory=[], robustHistory=[];
+  let lossHistory=[], accHistory=[], perAttackHistory={};
 
   function drawChart(){
     const w=canvas.width, h=canvas.height;
@@ -753,11 +914,14 @@
     };
     drawSeries(lossHistory,'#C9962E',maxLoss,true,false);
     drawSeries(accHistory,'#FFD84D',1,false,false);
-    if(robustHistory.length>1) drawSeries(robustHistory,'#E8615D',1,false,true);
+    Object.keys(perAttackHistory).forEach(atk=>{
+      const arr=perAttackHistory[atk];
+      if(arr.length>1) drawSeries(arr, ATTACK_COLORS[atk]||'#E8615D', 1, false, true);
+    });
   }
 
   // ---------- Fake training loop ----------
-  let running=false, epochTimer=null;
+  let running=false, epochTimer=null, currentSettings=null;
 
   function addLog(text,epochNum){
     const div=document.createElement('div');
@@ -776,6 +940,7 @@
 
     const channels = channelsFor[datasetSel.value] || 3;
     const seedUsed = seedVariation.checked ? Math.floor(1000+Math.random()*9000) : parseInt(seedInput.value||1024);
+    const { flops, params, inferenceMs } = estimateFlopsParams(archSel.value, parseInt(res.value), defenses);
 
     return {
       arch:archSel.value, archName:archNames[archSel.value],
@@ -783,7 +948,7 @@
       resolution:parseInt(res.value), channels,
       pooling, optimizer:optSel.value,
       attacks, defenses, epsilon:parseInt(eps.value),
-      seedUsed
+      seedUsed, flops, params, inferenceMs
     };
   }
 
@@ -796,6 +961,83 @@
     $('rd-attacks').textContent=s.attacks.length?s.attacks.join(', '):'none';
     $('rd-defenses').textContent=s.defenses.length?s.defenses.join(', '):'none';
     $('rd-seed').textContent=s.seedUsed;
+    $('rd-flops').textContent=s.flops.toFixed(1)+' M';
+    $('rd-params').textContent=s.params.toFixed(2)+' M';
+    $('rd-inference').textContent=s.inferenceMs.toFixed(2)+' ms';
+  }
+
+  // ---------- Run history & report ----------
+  let runHistory=[];
+
+  function renderStats(s, finalLoss, finalAcc, finalPerAttack){
+    const lossStats=computeStats(lossHistory);
+    const accStats=computeStats(accHistory);
+    let rows = `<tr><td>Loss</td><td>${lossStats.mean.toFixed(3)}</td><td>${lossStats.std.toFixed(3)}</td><td>${lossStats.ci[0].toFixed(3)} – ${lossStats.ci[1].toFixed(3)}</td></tr>`;
+    rows += `<tr><td>Clean accuracy</td><td>${(accStats.mean*100).toFixed(1)}%</td><td>${(accStats.std*100).toFixed(1)}%</td><td>${(accStats.ci[0]*100).toFixed(1)}% – ${(accStats.ci[1]*100).toFixed(1)}%</td></tr>`;
+    Object.keys(finalPerAttack).forEach(atk=>{
+      const st=computeStats(finalPerAttack[atk]);
+      if(st) rows += `<tr><td>Adv. acc (${atk})</td><td>${(st.mean*100).toFixed(1)}%</td><td>${(st.std*100).toFixed(1)}%</td><td>${(st.ci[0]*100).toFixed(1)}% – ${(st.ci[1]*100).toFixed(1)}%</td></tr>`;
+    });
+    statsContainer.innerHTML = `<table class="stats-table"><tr><th>Metric</th><th>Mean</th><th>Std dev</th><th>95% CI</th></tr>${rows}</table>`;
+    return { lossStats, accStats };
+  }
+
+  function renderFailureCases(cases){
+    if(!cases || !cases.length){ failureHeading.style.display='none'; failureContainer.innerHTML=''; return; }
+    failureHeading.style.display='flex';
+    failureContainer.innerHTML = cases.map(c=>`
+      <div class="failure-card">
+        <img src="${c.thumbnail}" alt="failure case">
+        <div class="fc-text">True: <b>${c.trueLabel}</b> → Predicted: <b>${c.predLabel}</b><br>Attack: ${c.attack} · confidence ${(c.confidence*100).toFixed(0)}%</div>
+      </div>`).join('');
+  }
+
+  function renderRunHistory(){
+    if(!runHistory.length){ runHistoryList.innerHTML='<div class="stats-empty">No runs yet — completed and stopped runs will be listed here.</div>'; return; }
+    runHistoryList.innerHTML = runHistory.map(r=>`
+      <div class="run-history-item">
+        <span>#${r.id} · ${r.archName} / ${r.datasetName} · ${r.epochsRun}ep${r.attacks.length?' · '+r.attacks.join('+'):''}</span>
+        <span>acc ${(r.finalAcc*100).toFixed(1)}% · ${r.status}</span>
+      </div>`).join('');
+  }
+
+  function recordRun(s, completed, stallReason){
+    const finalPerAttack = {};
+    Object.keys(perAttackHistory).forEach(atk=>{ finalPerAttack[atk]=[...perAttackHistory[atk]]; });
+    const { lossStats, accStats } = renderStats(s, lossHistory[lossHistory.length-1], accHistory[accHistory.length-1], finalPerAttack);
+
+    const gradcamData = generateGradCAM(s.seedUsed);
+    gradcamImg.src = gradcamData; gradcamImg.style.display='block';
+    gradcamNote.textContent = 'Simulated Grad-CAM for this run — illustrative activation heatmap, not computed from a real image model.';
+
+    let failureCases=[];
+    if(s.attacks.length){
+      failureCases = generateFailureCases(s, 3);
+      renderFailureCases(failureCases);
+    } else {
+      renderFailureCases([]);
+    }
+
+    const chartImage = canvas.toDataURL('image/png');
+
+    const record = {
+      id: runHistory.length+1,
+      timestamp: new Date().toISOString(),
+      archName:s.archName, datasetName:s.datasetName, resolution:s.resolution, channels:s.channels,
+      optimizer:s.optimizer, pooling:s.pooling,
+      lr:lrVal.textContent, batch:bsVal.textContent, dropout:doVal.textContent,
+      epochsRequested:parseInt(ep.value), epochsRun:lossHistory.length,
+      attacks:s.attacks, defenses:s.defenses, epsilon:s.epsilon, seedUsed:s.seedUsed,
+      status: completed ? (stallReason?'early-stopped':'completed') : 'stopped',
+      finalLoss: lossHistory[lossHistory.length-1], finalAcc: accHistory[accHistory.length-1],
+      lossHistory:[...lossHistory], accHistory:[...accHistory], perAttackHistory:finalPerAttack,
+      lossStats, accStats,
+      flops:s.flops, params:s.params, inferenceMs:s.inferenceMs,
+      chartImage, gradcamImage:gradcamData, failureCases
+    };
+    runHistory.push(record);
+    renderRunHistory();
+    downloadReportBtn.disabled = false;
   }
 
   function runAutoTune(datasetKey, callback){
@@ -824,9 +1066,9 @@
   }
 
   function startRun(){
-    startBtn.disabled=true; stopBtn.disabled=false;
+    setRunButtonsDisabled(true, false);
     const controls=[lr,bs,ep,doEl,res,eps,archSel,datasetSel,optSel,seedInput,seedVariation,
-      sppBox,asppBox,atkFgsm,atkIfgsm,atkPgd,defPgd,defFgsm,defFreeat,defMart,defTrades,defSmooth,defEnsemble,defInputT,defFeatureSq,defDistill,defGrad,defLabel,
+      sppBox,asppBox,atkFgsm,atkIfgsm,atkPgd,defPgd,defFgsm,defFreeat,defMart,defTrades,defSmooth,defEnsemble,defInputT,defFeatureSq,defDistill,defGrad,defLabel,defSegmentation,defVit,defTransformer,defNovel,
       autotuneBox,tuneMethod,tuneTrials,earlystopBox,patience];
     controls.forEach(el=>el.disabled=true);
     statusText.textContent = autotuneBox.checked ? 'TUNING' : 'TRAINING';
@@ -843,13 +1085,27 @@
   function beginTraining(){
     running=true;
     const s=collectSettings();
+    currentSettings = s;
     updateRunDetails(s);
 
     const hasAttack = s.attacks.length>0;
-    robustCard.classList.toggle('hidden', !hasAttack);
-    robustLegend.style.display = hasAttack ? 'flex' : 'none';
 
-    lossHistory=[]; accHistory=[]; robustHistory=[];
+    // build dynamic per-attack metric cards + legend entries
+    advMetricsContainer.innerHTML='';
+    advLegendContainer.innerHTML='';
+    perAttackHistory={};
+    s.attacks.forEach(atk=>{
+      perAttackHistory[atk]=[];
+      const card=document.createElement('div');
+      card.className='metric-card robust';
+      card.innerHTML=`<div class="label">Adv. accuracy (${atk})</div><div class="value" id="adv-val-${atk.replace(/[^a-zA-Z0-9]/g,'')}" style="color:${ATTACK_COLORS[atk]}">—</div>`;
+      advMetricsContainer.appendChild(card);
+      const leg=document.createElement('span');
+      leg.innerHTML=`<span class="swatch" style="background:${ATTACK_COLORS[atk]};"></span> adv. acc (${atk})`;
+      advLegendContainer.appendChild(leg);
+    });
+
+    lossHistory=[]; accHistory=[];
 
     const totalEpochs=parseInt(ep.value);
     let epochN=0;
@@ -865,8 +1121,9 @@
     const useEarlyStop = earlystopBox.checked;
     const patienceEpochs = parseInt(patience.value);
     let bestAcc = -1, stallCount = 0;
+    let stalledEarly = false;
 
-    addLog(`Run started — ${s.archName} on ${s.datasetName} @ ${s.resolution}px, optimizer ${s.optimizer}, lr ${lrFactor}, batch ${bsVal.textContent}, dropout ${doVal.textContent}, pooling: ${s.pooling}${hasAttack ? `, attacks: ${s.attacks.join('/')} (ε=${s.epsilon}/255)` : ''}${s.defenses.length ? `, defenses: ${s.defenses.join(', ')}` : ''}${useEarlyStop ? `, early stopping: patience ${patienceEpochs}` : ''}.`);
+    addLog(`Run started — ${s.archName} on ${s.datasetName} @ ${s.resolution}px, optimizer ${s.optimizer}, lr ${lrFactor}, batch ${bsVal.textContent}, dropout ${doVal.textContent}, pooling: ${s.pooling}${hasAttack ? `, attacks: ${s.attacks.join('/')} (ε=${s.epsilon}/255)` : ''}${s.defenses.length ? `, defenses: ${s.defenses.join(', ')}` : ''}${useEarlyStop ? `, early stopping: patience ${patienceEpochs}` : ''}. Est. FLOPs ${s.flops.toFixed(1)}M, params ${s.params.toFixed(2)}M, inference ${s.inferenceMs.toFixed(2)}ms.`);
 
     epochTimer=setInterval(()=>{
       epochN++;
@@ -880,50 +1137,184 @@
       lossValEl.textContent=loss.toFixed(3);
       accValEl.textContent=(acc*100).toFixed(1)+'%';
 
-      let robustLogPart='';
-      if(hasAttack){
-        const baseGap = 0.12 + epsPenalty*0.35 + (s.attacks.includes('PGD')?0.10:s.attacks.includes('I-FGSM')?0.06:0.03);
-        const gap = Math.max(0.01, baseGap*(1-defenseStrength));
-        const robust = Math.max(0.01, acc - gap + (Math.random()-0.5)*0.01);
-        robustHistory.push(robust);
-        robustValEl.textContent=(robust*100).toFixed(1)+'%';
-        robustLogPart = ` · adv_acc ${(robust*100).toFixed(1)}%`;
-      }
+      let advLogPart='';
+      s.attacks.forEach(atk=>{
+        const gap = Math.max(0.01, (ATTACK_GAP_BASE[atk] + epsPenalty*0.30) * (1-defenseStrength));
+        const advAcc = Math.max(0.01, acc - gap + (Math.random()-0.5)*0.01);
+        perAttackHistory[atk].push(advAcc);
+        const valEl=$('adv-val-'+atk.replace(/[^a-zA-Z0-9]/g,''));
+        if(valEl) valEl.textContent=(advAcc*100).toFixed(1)+'%';
+        advLogPart += ` · adv_acc[${atk}] ${(advAcc*100).toFixed(1)}%`;
+      });
 
       drawChart();
       pulseForward();
-      addLog(`loss ${loss.toFixed(3)} · val_acc ${(acc*100).toFixed(1)}%${robustLogPart}`, epochN);
+      addLog(`loss ${loss.toFixed(3)} · val_acc ${(acc*100).toFixed(1)}%${advLogPart}`, epochN);
 
       if(useEarlyStop){
         if(acc > bestAcc + 0.003){ bestAcc=acc; stallCount=0; }
         else { stallCount++; }
         if(stallCount>=patienceEpochs){
           addLog(`No improvement ≥0.3% for ${patienceEpochs} epochs — early stopping triggered.`);
-          stopRun(true);
+          stalledEarly=true;
+          stopRun(true, stalledEarly);
           return;
         }
       }
 
-      if(epochN>=totalEpochs) stopRun(true);
+      if(epochN>=totalEpochs) stopRun(true, stalledEarly);
     },550);
   }
 
-  function stopRun(completed){
+  function stopRun(completed, stalledEarly){
     clearInterval(epochTimer);
     running=false;
-    startBtn.disabled=false; stopBtn.disabled=true;
+    setRunButtonsDisabled(false, true);
     const controls=[lr,bs,ep,doEl,res,eps,archSel,datasetSel,optSel,seedInput,seedVariation,
-      sppBox,asppBox,atkFgsm,atkIfgsm,atkPgd,defPgd,defFgsm,defFreeat,defMart,defTrades,defSmooth,defEnsemble,defInputT,defFeatureSq,defDistill,defGrad,defLabel,
+      sppBox,asppBox,atkFgsm,atkIfgsm,atkPgd,defPgd,defFgsm,defFreeat,defMart,defTrades,defSmooth,defEnsemble,defInputT,defFeatureSq,defDistill,defGrad,defLabel,defSegmentation,defVit,defTransformer,defNovel,
       autotuneBox,tuneMethod,tuneTrials,earlystopBox,patience];
     controls.forEach(el=>el.disabled=false);
-    statusText.textContent=completed?'COMPLETE':'STOPPED';
-    addLog(completed?'Run complete.':'Run stopped by user.');
+    statusText.textContent=completed?(stalledEarly?'EARLY-STOPPED':'COMPLETE'):'STOPPED';
+    addLog(completed?(stalledEarly?'Run ended via early stopping.':'Run complete.'):'Run stopped by user.');
+    if(currentSettings && lossHistory.length>0) recordRun(currentSettings, completed, stalledEarly);
+    currentSettings = null;
   }
 
-  startBtn.addEventListener('click',startRun);
-  stopBtn.addEventListener('click',()=>stopRun(false));
+  startBtns.forEach(b=>b.addEventListener('click',startRun));
+  stopBtns.forEach(b=>b.addEventListener('click',()=>stopRun(false, false)));
 
   drawChart();
+
+  // ---------- Excel report ----------
+  downloadReportBtn.addEventListener('click', async ()=>{
+    if(typeof ExcelJS==='undefined'){
+      alert('The report library did not load (needs an internet connection). Please try again.');
+      return;
+    }
+    downloadReportBtn.disabled=true;
+    downloadReportBtn.textContent='Building report…';
+    try{
+      const wb = new ExcelJS.Workbook();
+      wb.creator='Forge Training Console';
+
+      // ---- Summary sheet ----
+      const summary = wb.addWorksheet('Summary');
+      summary.columns=[
+        {header:'Run #',key:'id',width:8},{header:'Timestamp',key:'timestamp',width:22},
+        {header:'Model',key:'model',width:20},{header:'Dataset',key:'dataset',width:14},
+        {header:'Resolution',key:'res',width:12},{header:'Optimizer',key:'opt',width:22},
+        {header:'Pooling',key:'pool',width:20},{header:'LR',key:'lr',width:10},
+        {header:'Batch',key:'batch',width:8},{header:'Dropout',key:'dropout',width:10},
+        {header:'Epochs (req/run)',key:'epochs',width:16},{header:'Status',key:'status',width:14},
+        {header:'Final Loss',key:'floss',width:12},{header:'Final Acc %',key:'facc',width:12},
+        {header:'Loss Mean',key:'lmean',width:10},{header:'Loss Std',key:'lstd',width:10},
+        {header:'Loss 95% CI',key:'lci',width:20},
+        {header:'Acc Mean %',key:'amean',width:10},{header:'Acc Std %',key:'astd',width:10},
+        {header:'Acc 95% CI %',key:'aci',width:20},
+        {header:'Adv. Accuracies (mean %, per attack)',key:'advacc',width:34},
+        {header:'FLOPs (M)',key:'flops',width:10},{header:'Params (M)',key:'params',width:10},
+        {header:'Inference (ms)',key:'inf',width:12},
+        {header:'Attacks',key:'attacks',width:20},{header:'Defenses',key:'defenses',width:40},
+        {header:'Seed',key:'seed',width:10}
+      ];
+      runHistory.forEach(r=>{
+        const advStr = Object.keys(r.perAttackHistory).map(atk=>{
+          const st=computeStats(r.perAttackHistory[atk]);
+          return st ? `${atk}: ${(st.mean*100).toFixed(1)}% [CI ${(st.ci[0]*100).toFixed(1)}-${(st.ci[1]*100).toFixed(1)}]` : '';
+        }).join('; ');
+        summary.addRow({
+          id:r.id, timestamp:r.timestamp, model:r.archName, dataset:r.datasetName, res:`${r.resolution}px`,
+          opt:r.optimizer, pool:r.pooling, lr:r.lr, batch:r.batch, dropout:r.dropout,
+          epochs:`${r.epochsRequested}/${r.epochsRun}`, status:r.status,
+          floss:r.finalLoss.toFixed(3), facc:(r.finalAcc*100).toFixed(1),
+          lmean:r.lossStats.mean.toFixed(3), lstd:r.lossStats.std.toFixed(3),
+          lci:`${r.lossStats.ci[0].toFixed(3)} - ${r.lossStats.ci[1].toFixed(3)}`,
+          amean:(r.accStats.mean*100).toFixed(1), astd:(r.accStats.std*100).toFixed(1),
+          aci:`${(r.accStats.ci[0]*100).toFixed(1)} - ${(r.accStats.ci[1]*100).toFixed(1)}`,
+          advacc:advStr||'—',
+          flops:r.flops.toFixed(1), params:r.params.toFixed(2), inf:r.inferenceMs.toFixed(2),
+          attacks:r.attacks.join(', ')||'none', defenses:r.defenses.join(', ')||'none', seed:r.seedUsed
+        });
+      });
+      summary.getRow(1).font={bold:true};
+
+      // ---- Epoch data sheet (long format, for building your own charts) ----
+      const epochSheet = wb.addWorksheet('Epoch Data');
+      epochSheet.columns=[
+        {header:'Run #',key:'id',width:8},{header:'Epoch',key:'epoch',width:8},
+        {header:'Loss',key:'loss',width:10},{header:'Val Acc %',key:'acc',width:12},
+        {header:'Attack',key:'attack',width:12},{header:'Adv Acc %',key:'advacc',width:12}
+      ];
+      runHistory.forEach(r=>{
+        r.lossHistory.forEach((lv,i)=>{
+          epochSheet.addRow({ id:r.id, epoch:i+1, loss:lv.toFixed(4), acc:(r.accHistory[i]*100).toFixed(2), attack:'', advacc:'' });
+        });
+        Object.keys(r.perAttackHistory).forEach(atk=>{
+          r.perAttackHistory[atk].forEach((av,i)=>{
+            epochSheet.addRow({ id:r.id, epoch:i+1, loss:'', acc:'', attack:atk, advacc:(av*100).toFixed(2) });
+          });
+        });
+      });
+      epochSheet.getRow(1).font={bold:true};
+
+      // ---- Charts sheet (embedded PNG snapshots) ----
+      const chartsSheet = wb.addWorksheet('Charts');
+      let rowCursor=0;
+      runHistory.forEach(r=>{
+        chartsSheet.getCell(`A${rowCursor+1}`).value = `Run #${r.id} — ${r.archName} / ${r.datasetName}`;
+        chartsSheet.getCell(`A${rowCursor+1}`).font={bold:true};
+        const imgId = wb.addImage({ base64: r.chartImage.split(',')[1], extension:'png' });
+        chartsSheet.addImage(imgId, { tl:{col:0, row:rowCursor+1}, ext:{width:500, height:130} });
+        rowCursor += 9;
+      });
+
+      // ---- Grad-CAM sheet ----
+      const gcSheet = wb.addWorksheet('Grad-CAM');
+      gcSheet.getCell('A1').value='Simulated Grad-CAM visualizations — illustrative activation heatmaps from this dashboard\'s simulated training loop, not computed from a real image model.';
+      gcSheet.getCell('A1').font={italic:true};
+      let gcRow=2;
+      runHistory.forEach(r=>{
+        gcSheet.getCell(`A${gcRow}`).value=`Run #${r.id} — ${r.archName} / ${r.datasetName}`;
+        gcSheet.getCell(`A${gcRow}`).font={bold:true};
+        const imgId = wb.addImage({ base64: r.gradcamImage.split(',')[1], extension:'png' });
+        gcSheet.addImage(imgId, { tl:{col:0, row:gcRow}, ext:{width:120, height:120} });
+        gcRow += 8;
+      });
+
+      // ---- Failure cases sheet ----
+      const fcSheet = wb.addWorksheet('Failure Cases');
+      fcSheet.getCell('A1').value='Simulated failure-case examples (illustrative) — where the model misclassified under attack.';
+      fcSheet.getCell('A1').font={italic:true};
+      let fcRow=3;
+      runHistory.forEach(r=>{
+        if(!r.failureCases.length) return;
+        fcSheet.getCell(`A${fcRow}`).value=`Run #${r.id} — ${r.archName} / ${r.datasetName}`;
+        fcSheet.getCell(`A${fcRow}`).font={bold:true};
+        fcRow++;
+        r.failureCases.forEach(c=>{
+          const imgId = wb.addImage({ base64: c.thumbnail.split(',')[1], extension:'png' });
+          fcSheet.addImage(imgId, { tl:{col:0, row:fcRow}, ext:{width:70, height:70} });
+          fcSheet.getCell(`C${fcRow+1}`).value = `True: ${c.trueLabel} → Predicted: ${c.predLabel} | Attack: ${c.attack} | Confidence: ${(c.confidence*100).toFixed(0)}%`;
+          fcRow += 5;
+        });
+        fcRow += 2;
+      });
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href=url; a.download='forge-training-report.xlsx';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch(err){
+      console.error(err);
+      alert('Could not build the report: '+err.message);
+    } finally {
+      downloadReportBtn.disabled=false;
+      downloadReportBtn.textContent='⬇ Download Excel report';
+    }
+  });
 })();
 </script>
 </body>
